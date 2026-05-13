@@ -1,0 +1,403 @@
+#include <iostream>
+#include <string>
+using namespace std;
+
+class Transaction {
+public:
+    int tid;
+    int amount;
+    int dayBorrow;
+    int dayAllowed;
+    int dayReturned;
+    double fineRate;
+    User* from;
+    User* to;
+    bool returned;
+    Transaction* next;
+
+    Transaction(int id, int amt, int db, int da, double f, User* fr, User* t) {
+        tid = id;
+        amount = amt;
+        dayBorrow = db;
+        dayAllowed = da;
+        fineRate = f;
+        from = fr;
+        to = t;
+        returned = false;
+        dayReturned = -1;
+        next = NULL;
+    }
+
+    int finalAmount(int currentDay) {
+        int due = dayBorrow + dayAllowed;
+        if (currentDay > due) {
+            int overdue = currentDay - due;
+            return amount + (amount * fineRate / 100.0) * overdue;
+        }        return amount;
+    }
+};
+
+class User {
+public:
+    int userid;
+    string name;
+    bool isactive;
+    Transaction* loans;
+    Transaction* received;
+    User* left;
+    User* right;
+
+    User(int id, string n) {
+        userid = id;
+        name = n;
+        isactive = true;
+        loans = NULL;
+        received = NULL;
+        left = NULL;
+        right = NULL;
+    }
+};
+
+class bst {
+private:
+    User* root;
+
+    User* addUser(User* node, int id, string naam) {
+        if (node == NULL)
+            return new User(id, naam);
+
+        if (id < node->userid)
+            node->left = addUser(node->left, id, naam);
+
+        else if (id > node->userid)
+            node->right = addUser(node->right, id, naam);
+        else
+        {
+            cout << "User already exists.\n";
+            return node;
+        }
+       
+           // node->name = naam;
+
+        return node;
+    }
+
+    User* search(User* node, int id) {
+        if (!node || node->userid == id) return node;
+        if (id < node->userid) return search(node->left, id);
+        return search(node->right, id);
+    }
+
+    void countUsers(User* node, int& total, int& active) {
+        if (!node) 
+        {
+            cout << "there is no user added yet" << endl;  return;
+        }
+        total++;
+        if (node->isactive) active++;
+        countUsers(node->left, total, active);
+        countUsers(node->right, total, active);
+    }
+
+public:
+    bst() { root = NULL; }
+
+    void adduser(int id, string name) {
+        root = addUser(root, id, name);
+    }
+
+    User* searchuser(int id) {
+        User* u = search(root, id);
+        if (!u || !u->isactive) return NULL;
+        return u;
+    }
+
+    void getUserCounts(int& total, int& active) {
+        countUsers(root, total, active);
+    }
+};
+
+class loansys {
+private:
+    bst users;
+    Transaction* allTrans;
+    int nextTid;
+
+    void addTrans(Transaction*& head, Transaction* t) {
+        t->next = head;
+        head = t;
+    }
+
+public:
+    loansys() {
+        allTrans = NULL;
+        nextTid = 1;
+    }
+
+    void adduser(int id, string name) {
+        users.adduser(id, name);
+    }
+    void searchUser(int id) {
+        User* u = users.searchuser(id);
+        if (!u) {
+            cout << "User not found\n";
+            return;
+        }
+        cout << "ID: " << u->userid << "\nName: " << u->name<< "\nStatus: " << (u->isactive ? "Active" : "Inactive") << endl;
+    }
+
+    void activateUser(int id) {
+        User* u = users.searchuser(id);
+        if (u) {
+            u->isactive = true;
+            cout << "User activated\n";
+        }
+        else
+        {
+            cout << "No such user exists.\n";
+            return;
+        }
+    }
+
+    void deactivateUser(int id) 
+    {
+        User* u = users.searchuser(id);
+        if (u) {
+            u->isactive = false;
+            cout << "User deactivated\n";
+        }
+        else {
+            cout << "No such user exists.\n";
+            return;
+        }
+    }
+
+    void borrowMoney(int borrowerId, int lenderId,
+        int amount, int dayBorrow, int dayAllowed, double fine) {
+
+        User* borrower = users.searchuser(borrowerId);
+        User* lender = users.searchuser(lenderId);
+        if (!borrower || !lender)
+        {
+            cout << "No user or transaction" << endl;
+            return;
+        }
+        if (borrower == lender)
+        {
+            cout << "No user can borrow from themselves" << endl;
+            return;
+        }
+
+        Transaction* t = new Transaction(
+            nextTid++, amount, dayBorrow, dayAllowed, fine, borrower, lender );
+
+        addTrans(borrower->loans, t);
+        addTrans(lender->received, t);
+        addTrans(allTrans, t);
+    }
+
+    void returnLoan(int tid, int payerId, int receiverId, int returnDay) {
+        Transaction* t = allTrans;
+        while (t && t->tid != tid) t = t->next;
+        if (!t || t->returned) {
+            cout << "No user or transaction" << endl;
+            return;
+        }
+        if (payerId == receiverId )
+        {
+            cout << "error" << endl;
+        }
+        t->dayReturned = returnDay;
+        t->returned = true;
+
+        int paid = t->finalAmount(returnDay);
+        cout << "Returned " << paid << " for Transaction " << tid << endl;
+    }
+
+    void loanTransfer(int tid, int newBorrowerId) {
+        Transaction* t = allTrans;
+        while (t && t->tid != tid) t = t->next;
+        if (!t || t->returned)
+        {
+            cout << "No user or transaction" << endl;
+            return;
+        }
+        User* newBorrower = users.searchuser(newBorrowerId);
+        if (!newBorrower) return;
+
+        User* oldBorrower = t->from;
+        Transaction* cur = oldBorrower->loans;
+        Transaction* prev = NULL;
+
+        while (cur) {
+            if (cur == t) {
+                if (prev) prev->next = cur->next;
+                else oldBorrower->loans = cur->next;
+                break;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+
+        t->from = newBorrower;
+        addTrans(newBorrower->loans, t);
+        
+    }
+
+    void checkAccount(int userId) {
+        User* u = users.searchuser(userId);
+        if (!u)
+        {
+            cout << "No such user exists.\n";
+            return;
+        }
+        int owe = 0, receive = 0;
+        Transaction* t = u->loans;
+        while (t) {
+            if (!t->returned) owe += t->amount;
+            t = t->next;
+        }
+
+        t = u->received;
+        while (t) {
+            if (!t->returned)
+                receive += t->amount;
+            t = t->next;
+        }
+        cout << "Status: " << (u->isactive ? "Active" : "Inactive") << endl;
+            cout << "User " << u->userid << "\nOwed: " << owe << "\nlended: " << receive << endl;
+    }
+
+    void checkTransactions(int p1, int p2) {
+        User* u1 = users.searchuser(p1);
+        User* u2 = users.searchuser(p2);
+        if (!u1 || !u2) return;
+
+        Transaction* t = allTrans;
+        while (t) {
+            if ((t->from == u1 && t->to == u2) || (t->from == u2 && t->to == u1)) 
+            {
+                cout << "TID " << t->tid << " Amount " << t->amount << endl;
+            }
+            t = t->next;
+        }
+    }
+
+    void summarizeSystemAccounts() {
+        int total = 0, active = 0;
+        users.getUserCounts(total, active);
+
+        int trans = 0;
+        Transaction* t = allTrans;
+        while (t) { trans++; t = t->next; }
+
+        cout << "Users: " << total<< "\nActive: " << active<< "\nInactive: " << total-active << "\nTransactions: " << trans << endl;
+    }
+};
+
+int main() {
+    loansys s;
+    int choice;
+
+    do {
+        cout << "\n--- Loan Management System ---\n";
+        cout << "1. Add User" << endl;
+        cout << "2. Search User" << endl;
+        cout << "3. Activate User" << endl;
+        cout << "4. Deactivate User" << endl;
+        cout << "5. Borrow Money" << endl;
+        cout << "6. Return Loan" << endl;
+        cout << "7. Loan Transfer" << endl;
+        cout << "8. Check Account" << endl;
+        cout << "9. Summarize System Accounts" << endl;
+        cout << "0. Exit" << endl;
+        cout << "Choice: " << endl;
+        cin >> choice;
+
+        switch (choice) {
+        case 1: {
+            int id; string name;
+            cout << "ID: ";
+            cin >> id;
+            cout << "Name: ";
+            cin >> name;
+            s.adduser(id, name);
+            break;
+        }
+        case 2: {
+            int id;
+            cout << "ID: "; 
+            cin >> id;
+            s.searchUser(id);
+            break;
+        }
+        case 3: {
+            int id;
+            cout << "ID: ";
+            cin >> id;
+            s.activateUser(id);
+            break;
+        }
+        case 4: {
+            int id;
+            cout << "ID: "; 
+            cin >> id;
+            s.deactivateUser(id);
+            break;
+        }
+        case 5: {
+            int b, l, amt, db, da; double f;
+            cout << "Borrower ID: "; 
+            cin >> b;
+            cout << "Lender ID: "; 
+            cin >> l;
+            cout << "Amount: ";
+            cin >> amt;
+            cout << "Day Borrowed: "; 
+            cin >> db;
+            cout << "Days Allowed: ";
+            cin >> da;
+            cout << "Fine % per day: ";
+            cin >> f;
+            s.borrowMoney(b, l, amt, db, da, f);
+            break;
+        }
+        case 6: {
+            int tid, p, r, d;
+            cout << "Transaction ID: "; 
+            cin >> tid;
+            cout << "Payer ID: ";
+            cin >> p;
+            cout << "Receiver ID: ";
+            cin >> r;
+            cout << "Return Day: ";
+            cin >> d;
+            s.returnLoan(tid, p, r, d);
+            break;
+        }
+        case 7: {
+            int tid, nb;
+            cout << "Transaction ID: "; 
+            cin >> tid;
+            cout << "New Borrower ID: ";
+            cin >> nb;
+            s.loanTransfer(tid, nb);
+            break;
+        }
+        case 8: {
+            int id;
+            cout << "User ID: "; 
+            cin >> id;
+            s.checkAccount(id);
+            break;
+            
+        }
+        case 9:
+            s.summarizeSystemAccounts();
+            break;
+        case 0:
+            cout << "Exiting...\n";
+        }
+    } while (choice != 0);
+    return 0;
+}
